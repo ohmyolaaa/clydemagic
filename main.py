@@ -45,9 +45,9 @@ async def remove_reply_keyboard(message: types.Message):
 async def handle_nick_yasash(message: types.Message, state: FSMContext):
     await state.set_state(NickStates.waiting_for_nick_text)
     await message.answer(
-        "Enter your nickname (alias).\n<i>Example: Cay</i>",
+        "<b>Enter your nickname (alias)</b>\n<i>Example: Cay</i>",
         parse_mode="HTML",
-        reply_markup=ForceReply(selective=True, input_field_placeholder="Masalan: Mahmud")
+        reply_markup=ForceReply(selective=True, input_field_placeholder="Message")
         
     )
 
