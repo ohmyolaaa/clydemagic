@@ -6,7 +6,7 @@ Drop-in maintenance mode for FontStyleBot.
 Single command: /admin
 Everything is handled via interactive buttons — no other commands needed.
 """
-
+import asyncio
 import logging
 from typing import Callable, Any
 
@@ -156,11 +156,16 @@ async def handle_status_input(message: types.Message, state: FSMContext):
     _maintenance_message = message.text.strip()
     await set_maintenance_state(_maintenance_enabled, _maintenance_message)
     await state.clear()
-    await message.answer(
-        f"✅ Message updated!\n\n" + _admin_text(),
-        reply_markup=_admin_keyboard(),
-        parse_mode="HTML",
-    )
+
+    # Send a separate confirmation that auto-deletes after 3 seconds
+    confirm = await message.answer("✅ Message updated!")
+    await message.answer(_admin_text(), reply_markup=_admin_keyboard(), parse_mode="HTML")
+
+    await asyncio.sleep(3)
+    try:
+        await confirm.delete()
+    except Exception:
+        pass
 
 # ─────────────────────────────────────────────
 #  Refresh panel
@@ -170,5 +175,8 @@ async def cb_admin_refresh(callback: types.CallbackQuery):
     if callback.from_user.id not in ADMIN_IDS:
         await callback.answer("⛔ Not authorised", show_alert=True)
         return
-    await callback.message.edit_text(_admin_text(), reply_markup=_admin_keyboard(), parse_mode="HTML")
-    await callback.answer("🔄 Refreshed", show_alert=False)
+    try:
+        await callback.message.edit_text(_admin_text(), reply_markup=_admin_keyboard(), parse_mode="HTML")
+        await callback.answer("🔄 Refreshed", show_alert=False)
+    except Exception:
+        await callback.answer("✅ Already up to date!", show_alert=False)
