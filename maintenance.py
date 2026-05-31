@@ -29,7 +29,7 @@ maintenance_router = Router()
 #  ⚠️  Set your Telegram user ID(s) here
 # ─────────────────────────────────────────────
 ADMIN_IDS: set[int] = {
-    123456789,   # ← replace with your real Telegram ID
+    7399488750,   # ← replace with your real Telegram ID
 }
 
 # ─────────────────────────────────────────────
