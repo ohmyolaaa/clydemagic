@@ -185,11 +185,14 @@ async def handle_status_input(message: types.Message, state: FSMContext):
     confirm = await message.answer("✅ Message updated!")
     await message.answer(_admin_text(), reply_markup=_admin_keyboard(), parse_mode="HTML")
 
-    await asyncio.sleep(3)
-    try:
-        await confirm.delete()
-    except Exception:
-        pass
+    async def _delete_later():
+        await asyncio.sleep(3)
+        try:
+            await confirm.delete()
+        except Exception:
+            pass
+
+    asyncio.create_task(_delete_later())
 
 # ─────────────────────────────────────────────
 #  Refresh panel

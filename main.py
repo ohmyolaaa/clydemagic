@@ -17,6 +17,7 @@ from aiogram.fsm.state import State, StatesGroup
 from aiogram.fsm.storage.memory import MemoryStorage
 from aiogram.types import ForceReply
 from maintenance import ADMIN_IDS
+from datetime import datetime, timezone
 from database import (
     init_db, register_user,
     get_total_users, get_total_font_uses, get_top_fonts,
@@ -176,8 +177,10 @@ def get_keyboard(page: int = 0, active_font_idx: int = None):
 
     keyboard = []
     row = []
-    for font in current_fonts:
-        font_idx = fonts.index(font)
+    for font_idx in range(start, end):
+        if font_idx >= len(fonts):
+            break
+        font = fonts[font_idx]
         btn_text = get_button_text(font)
         if not btn_text.strip():
             btn_text = font["fontName"]
@@ -215,23 +218,42 @@ def get_keyboard(page: int = 0, active_font_idx: int = None):
 
     return InlineKeyboardMarkup(inline_keyboard=keyboard)
 
+def time_ago(saved_at: str) -> str:
+    try:
+        saved = datetime.fromisoformat(saved_at).replace(tzinfo=timezone.utc)
+        diff  = datetime.now(timezone.utc) - saved
+        seconds = int(diff.total_seconds())
+        if seconds < 60:
+            return "just now"
+        elif seconds < 3600:
+            return f"{seconds // 60}m ago"
+        elif seconds < 86400:
+            return f"{seconds // 3600}h ago"
+        elif seconds < 604800:
+            return f"{seconds // 86400}d ago"
+        else:
+            return f"{seconds // 604800}w ago"
+    except Exception:
+        return ""
 
 async def build_saved_nicknames_message(nicknames: list[dict], page: int = 0):
-    per_page    = 5
+    per_page    = 8
     start       = page * per_page
     chunk       = nicknames[start:start + per_page]
     total_pages = (len(nicknames) + per_page - 1) // per_page
 
     lines = []
     for nick in chunk:
+        ago = time_ago(nick["saved_at"])
         lines.append(
-            f"▪️ <code>{nick['converted_text']}</code>  ❌ /del{nick['code']}"
+            f"▪️ <code>{nick['converted_text']}</code>  ← tap to copy\n"
+            f"   <i>Style: {nick['font_name']} • {ago}</i>  ❌ /del{nick['code']}\n"
         )
 
     text = (
         f"🗃 <b>My Saved Nicknames</b> ({len(nicknames)})\n\n"
         + "\n".join(lines)
-        + "\n\n<i>Tap a nickname to copy • tap /delCAYXXXX to delete</i>"
+        + "\n<i>Tap /delCAYXXXX to delete</i>"
     )
 
     nav = []
