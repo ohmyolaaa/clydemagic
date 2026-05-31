@@ -39,7 +39,7 @@ logger.info("Bot starting up...")
 # ─────────────────────────────────────────────
 #  Bot setup
 # ─────────────────────────────────────────────
-BOT_TOKEN = "YOUR_BOT_TOKEN_HERE"
+BOT_TOKEN = "8975741273:AAERFWG11zY8_e9q47qZDjRQsD1oTzOPSas"
 
 # Improved Bot Session with timeout
 session = AiohttpSession(timeout=30)
