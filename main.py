@@ -131,7 +131,6 @@ def get_nickname_menu_keyboard():
 async def show_nickname_start(message: types.Message):
     """New /start flow you requested"""
     text = "<b>Select an option below to create your unique nickname.</b>"
-    
     await message.answer(
         text=text,
         reply_markup=get_nickname_menu_keyboard(),
@@ -144,7 +143,6 @@ def load_fonts():
     if not FONTS_FILE.exists():
         logger.error("fonts.json file not found in the current directory!")
         raise FileNotFoundError("fonts.json missing")
-    
     try:
         with open(FONTS_FILE, "r", encoding="utf-8") as f:
             fonts = json.load(f)
@@ -218,7 +216,7 @@ def get_button_text(font_data: dict) -> str:
         return font_name
     return convert_text(font_name, font_data)
 
-def get_keyboard(page: int = 0):
+def get_keyboard(page: int = 0, active_font_idx: int = None):
     buttons_per_page = 21
     buttons_per_row = 3
     start = page * buttons_per_page
@@ -234,6 +232,11 @@ def get_keyboard(page: int = 0):
         btn_text = get_button_text(font)
         if not btn_text.strip():
             btn_text = font["fontName"]
+
+        # Mark the currently active font with a checkmark
+        if font_idx == active_font_idx:
+            btn_text = f"✅ {font['fontName']}"
+
         btn = InlineKeyboardButton(
             text=btn_text,
             callback_data=f"font_{font_idx}"
@@ -263,8 +266,8 @@ def get_keyboard(page: int = 0):
         ])
     else:
         keyboard.append([
+            InlineKeyboardButton(text="↼ Previous", callback_data=f"page_{page-1}"),
             InlineKeyboardButton(text="Next ⇀", callback_data=f"page_{page+1}"),
-            InlineKeyboardButton(text="↼ Previous", callback_data=f"page_{page-1}")
         ])
         keyboard.append([InlineKeyboardButton(text="⤵️ Back", callback_data="close")])
 
@@ -282,9 +285,8 @@ async def process_pagination(callback: types.CallbackQuery):
         page = int(callback.data.split("_")[1])
         user_key = f"{callback.message.chat.id}_{callback.message.message_id}"
         user_current_pages[user_key] = page
-        
-        kb = get_keyboard(page)
-        
+        active_font_idx = user_current_fonts.get(user_key)
+        kb = get_keyboard(page, active_font_idx=active_font_idx)
         await callback.message.edit_reply_markup(reply_markup=kb)
         await callback.answer(f"📄 Navigated To Page {page + 1}", show_alert=False)
         logger.debug(f"User {callback.from_user.id} navigated to page {page}")
@@ -296,7 +298,6 @@ async def process_pagination(callback: types.CallbackQuery):
 async def process_font_selection(callback: types.CallbackQuery):
     try:
         font_idx = int(callback.data.split("_")[1])
-        
         if font_idx < 0 or font_idx >= len(fonts):
             await callback.answer("❌ Invalid Font Selected!", show_alert=True)
             return
@@ -323,8 +324,7 @@ async def process_font_selection(callback: types.CallbackQuery):
                 original_text = current_text.replace("<code>", "").replace("</code>", "")
 
         converted = convert_text(original_text, font_data)
-
-        kb = get_keyboard(current_page)
+        kb = get_keyboard(current_page, active_font_idx=font_idx)
 
         new_message_text = (
             f"<b>{font_idx + 1}. Ready: {converted}</b>\n"
