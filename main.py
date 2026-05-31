@@ -15,7 +15,7 @@ from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.fsm.storage.memory import MemoryStorage
 from aiogram.types import ForceReply
-
+from maintenance import ADMIN_IDS
 from database import (
     init_db, register_user,
     get_total_users, get_total_font_uses, get_top_fonts,
@@ -134,12 +134,17 @@ def get_button_text(font_data: dict) -> str:
 # ─────────────────────────────────────────────
 #  Keyboards
 # ─────────────────────────────────────────────
-def get_nickname_menu_keyboard():
+def get_nickname_menu_keyboard(user_id: int = None):
     keyboard = [
         [KeyboardButton(text="🖌🖌 Create a Nickname 🖌🖌")],
         [KeyboardButton(text="🗃 My Nicknames")],
         [KeyboardButton(text="📗 About the Bot")],
     ]
+    
+    # Only show Admin Panel button to admins
+    if user_id and user_id in ADMIN_IDS:
+        keyboard.append([KeyboardButton(text="⚙️ Admin Panel")])
+    
     return ReplyKeyboardMarkup(keyboard=keyboard, resize_keyboard=True, one_time_keyboard=False)
 
 def get_keyboard(page: int = 0, active_font_idx: int = None):
@@ -243,19 +248,19 @@ async def cmd_start(message: types.Message):
     await register_user(message.from_user.id, message.from_user.username, message.from_user.first_name)
     await message.answer(
         "<b>Select an option below to create your unique nickname.</b>",
-        reply_markup=get_nickname_menu_keyboard(),
+        reply_markup=get_nickname_menu_keyboard(message.from_user.id),
         parse_mode="HTML",
     )
     logger.info(f"User {message.from_user.id} started the bot")
 
 # ─────────────────────────────────────────────
-#  /stats
+#  /admin
 # ─────────────────────────────────────────────
-@dp.message(Command(commands=["stats"], prefix=BotCommands))
-async def cmd_stats(message: types.Message):
+@dp.message(F.text == "⚙️ Admin Panel")
+async def handle_admin_panel(message: types.Message):
     from maintenance import ADMIN_IDS
     if message.from_user.id not in ADMIN_IDS:
-        return  # silently ignore non-admins
+        return  # silently ignore
 
     total_users = await get_total_users()
     total_uses  = await get_total_font_uses()
@@ -266,14 +271,25 @@ async def cmd_stats(message: types.Message):
         for i, f in enumerate(top_fonts)
     ) or "  No data yet"
 
+    keyboard = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="🔧 Toggle Maintenance", callback_data="admin_toggle_maintenance")],
+        [InlineKeyboardButton(text="⤵️ Close", callback_data="close_admin")],
+    ])
+
     await message.answer(
-        f"📊 <b>Bot Statistics</b>\n\n"
+        f"⚙️ <b>Admin Panel</b>\n\n"
         f"👥 Total Users: <b>{total_users}</b>\n"
-        f"🎨 Total Font Styles: <b>{len(fonts)}</b>\n"
-        f"✨ Total Font Applications: <b>{total_uses}</b>\n\n"
+        f"🎨 Font Styles: <b>{len(fonts)}</b>\n"
+        f"✨ Font Applications: <b>{total_uses}</b>\n\n"
         f"🔥 <b>Top 5 Fonts:</b>\n{top_lines}",
+        reply_markup=keyboard,
         parse_mode="HTML",
     )
+
+@dp.callback_query(F.data == "close_admin")
+async def process_close_admin(callback: types.CallbackQuery):
+    await callback.message.delete()
+    await callback.answer()
 
 # ─────────────────────────────────────────────
 #  /delCAYXXXX — delete saved nickname by code
@@ -298,7 +314,7 @@ async def handle_del_command(message: types.Message):
             await message.answer(
                 "🗃 <b>My Saved Nicknames</b>\n\nNo saved nicknames left.",
                 parse_mode="HTML",
-                reply_markup=get_nickname_menu_keyboard(),
+                reply_markup=get_nickname_menu_keyboard(message.from_user.id),
             )
     else:
         await message.answer("❌ Couldn't delete — code not found or doesn't belong to you.")
@@ -433,7 +449,7 @@ async def handle_my_nicknames(message: types.Message):
             "🗃 <b>My Saved Nicknames</b>\n\nYou haven't saved any nicknames yet.\n"
             "Create one and tap <b>⭐ Save Nickname</b>!",
             parse_mode="HTML",
-            reply_markup=get_nickname_menu_keyboard(),
+            reply_markup=get_nickname_menu_keyboard(message.from_user.id),
         )
         return
 
@@ -455,7 +471,7 @@ async def process_close_saved(callback: types.CallbackQuery):
         await callback.bot.send_message(
             chat_id=callback.message.chat.id,
             text="Back to the main menu.",
-            reply_markup=get_nickname_menu_keyboard(),
+            reply_markup=get_nickname_menu_keyboard(callback.from_user.id),
             parse_mode="HTML",
         )
         await callback.answer()
@@ -489,7 +505,7 @@ async def process_close_about(callback: types.CallbackQuery):
         await callback.bot.send_message(
             chat_id=callback.message.chat.id,
             text="Back to the main menu.",
-            reply_markup=get_nickname_menu_keyboard(),
+            reply_markup=get_nickname_menu_keyboard(callback.from_user.id),
             parse_mode="HTML",
         )
         await callback.answer("⤵️ Back", show_alert=False)
@@ -529,7 +545,7 @@ async def process_close(callback: types.CallbackQuery):
         await callback.bot.send_message(
             chat_id=callback.message.chat.id,
             text="Back to the main menu.",
-            reply_markup=get_nickname_menu_keyboard(),
+            reply_markup=get_nickname_menu_keyboard(callback.from_user.id),
             parse_mode="HTML",
         )
         await callback.answer("👋 Menu Closed!", show_alert=False)
