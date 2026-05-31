@@ -19,7 +19,7 @@ from aiogram.types import ForceReply
 from database import (
     init_db, register_user,
     get_total_users, get_total_font_uses, get_top_fonts,
-    save_nickname, get_saved_nicknames, delete_saved_nickname,
+    save_nickname, get_saved_nicknames, delete_saved_nickname_by_code,
     get_saved_count, increment_font_stat,
     MAX_SAVED_PER_USER,
 )
@@ -101,25 +101,19 @@ def convert_text(text: str, font_data: dict) -> str:
 
     if font_data.get("leet"):
         return "".join(LEET_MAP.get(ch, ch) for ch in text)
-
-    lower_raw = font_data.get("fontLower", "")
-    upper_raw = font_data.get("fontUpper", "")
+    lower_raw  = font_data.get("fontLower", "")
+    upper_raw  = font_data.get("fontUpper", "")
     digits_raw = font_data.get("fontDigits", "")
-
-    lower_map = {chr(97 + i): lower_raw[i] for i in range(min(len(lower_raw), 26))} if lower_raw else {}
-    upper_map = {chr(65 + i): upper_raw[i] for i in range(min(len(upper_raw), 26))} if upper_raw else {}
+    lower_map  = {chr(97 + i): lower_raw[i]  for i in range(min(len(lower_raw),  26))} if lower_raw  else {}
+    upper_map  = {chr(65 + i): upper_raw[i]  for i in range(min(len(upper_raw),  26))} if upper_raw  else {}
     digits_map = {chr(48 + i): digits_raw[i] for i in range(min(len(digits_raw), 10))} if digits_raw else {}
 
     result = []
     for char in text:
-        if char.islower():
-            result.append(lower_map.get(char, char))
-        elif char.isupper():
-            result.append(upper_map.get(char, char))
-        elif char.isdigit():
-            result.append(digits_map.get(char, char))
-        else:
-            result.append(char)
+        if char.islower():   result.append(lower_map.get(char, char))
+        elif char.isupper(): result.append(upper_map.get(char, char))
+        elif char.isdigit(): result.append(digits_map.get(char, char))
+        else:                result.append(char)
     return "".join(result)
 
 def get_button_text(font_data: dict) -> str:
@@ -136,19 +130,15 @@ def get_nickname_menu_keyboard():
         [KeyboardButton(text="🗃 My Nicknames")],
         [KeyboardButton(text="📗 About the Bot")],
     ]
-    return ReplyKeyboardMarkup(
-        keyboard=keyboard,
-        resize_keyboard=True,
-        one_time_keyboard=False,
-    )
+    return ReplyKeyboardMarkup(keyboard=keyboard, resize_keyboard=True, one_time_keyboard=False)
 
 def get_keyboard(page: int = 0, active_font_idx: int = None):
     buttons_per_page = 21
-    buttons_per_row = 3
+    buttons_per_row  = 3
     start = page * buttons_per_page
-    end = start + buttons_per_page
+    end   = start + buttons_per_page
     current_fonts = fonts[start:end]
-    total_pages = (len(fonts) + buttons_per_page - 1) // buttons_per_page
+    total_pages   = (len(fonts) + buttons_per_page - 1) // buttons_per_page
 
     keyboard = []
     row = []
@@ -170,9 +160,7 @@ def get_keyboard(page: int = 0, active_font_idx: int = None):
 
     # Save button row (only shown when a font is active)
     if active_font_idx is not None:
-        keyboard.append([
-            InlineKeyboardButton(text="⭐ Save Nickname", callback_data="save_nick")
-        ])
+        keyboard.append([InlineKeyboardButton(text="⭐ Save Nickname", callback_data="save_nick")])
 
     if page == 0:
         nav = []
@@ -194,33 +182,39 @@ def get_keyboard(page: int = 0, active_font_idx: int = None):
 
     return InlineKeyboardMarkup(inline_keyboard=keyboard)
 
-def get_saved_nicknames_keyboard(nicknames: list[dict], page: int = 0) -> InlineKeyboardMarkup:
-    """Keyboard for browsing saved nicknames (5 per page)."""
-    per_page = 5
-    start = page * per_page
-    chunk = nicknames[start:start + per_page]
+
+async def build_saved_nicknames_message(nicknames: list[dict], page: int = 0):
+    """Build text + keyboard for the My Nicknames list using CAY codes."""
+    per_page    = 5
+    start       = page * per_page
+    chunk       = nicknames[start:start + per_page]
     total_pages = (len(nicknames) + per_page - 1) // per_page
 
-    keyboard = []
+    lines = []
     for nick in chunk:
-        keyboard.append([
-            InlineKeyboardButton(
-                text=f"📋 {nick['converted_text'][:30]} ({nick['font_name']})",
-                callback_data=f"viewnick_{nick['id']}"
-            ),
-            InlineKeyboardButton(text="🗑", callback_data=f"delnick_{nick['id']}_{page}"),
-        ])
+        lines.append(
+            f"▪️ <code>{nick['converted_text']}</code>  ❌ /del{nick['code']}"
+        )
 
+    text = (
+        f"🗃 <b>My Saved Nicknames</b> ({len(nicknames)}/{MAX_SAVED_PER_USER})\n\n"
+        + "\n".join(lines)
+        + "\n\n<i>Tap a nickname to copy • tap /delCAYXXXX to delete</i>"
+    )
+
+    # nav buttons for pagination only
     nav = []
     if page > 0:
         nav.append(InlineKeyboardButton(text="↼ Prev", callback_data=f"savedpage_{page-1}"))
     if page < total_pages - 1:
         nav.append(InlineKeyboardButton(text="Next ⇀", callback_data=f"savedpage_{page+1}"))
+
+    keyboard = []
     if nav:
         keyboard.append(nav)
-
     keyboard.append([InlineKeyboardButton(text="⤵️ Back", callback_data="close_saved")])
-    return InlineKeyboardMarkup(inline_keyboard=keyboard)
+
+    return text, InlineKeyboardMarkup(inline_keyboard=keyboard)
 
 # ─────────────────────────────────────────────
 #  Helpers
@@ -242,11 +236,7 @@ START_MSG = """👋 <b>Welcome to Cay Magic 🖌 Bot!</b>
 # ─────────────────────────────────────────────
 @dp.message(Command(commands=["start"], prefix=BotCommands))
 async def cmd_start(message: types.Message):
-    await register_user(
-        telegram_id=message.from_user.id,
-        username=message.from_user.username,
-        first_name=message.from_user.first_name,
-    )
+    await register_user(message.from_user.id, message.from_user.username, message.from_user.first_name)
     await message.answer(
         "<b>Select an option below to create your unique nickname.</b>",
         reply_markup=get_nickname_menu_keyboard(),
@@ -255,7 +245,7 @@ async def cmd_start(message: types.Message):
     logger.info(f"User {message.from_user.id} started the bot")
 
 # ─────────────────────────────────────────────
-#  /stats  (admin or any user — up to you)
+#  /stats
 # ─────────────────────────────────────────────
 @dp.message(Command(commands=["stats"], prefix=BotCommands))
 async def cmd_stats(message: types.Message):
@@ -268,14 +258,44 @@ async def cmd_stats(message: types.Message):
         for i, f in enumerate(top_fonts)
     ) or "  No data yet"
 
-    text = (
+    await message.answer(
         f"📊 <b>Bot Statistics</b>\n\n"
         f"👥 Total Users: <b>{total_users}</b>\n"
         f"🎨 Total Font Styles: <b>{len(fonts)}</b>\n"
         f"✨ Total Font Applications: <b>{total_uses}</b>\n\n"
-        f"🔥 <b>Top 5 Fonts:</b>\n{top_lines}"
+        f"🔥 <b>Top 5 Fonts:</b>\n{top_lines}",
+        parse_mode="HTML",
     )
-    await message.answer(text, parse_mode="HTML")
+
+# ─────────────────────────────────────────────
+#  /delCAYXXXX — delete saved nickname by code
+# ─────────────────────────────────────────────
+@dp.message(F.text.regexp(r"^/delCAY\d{4}$"))
+async def handle_del_command(message: types.Message):
+    code = message.text.strip().lstrip("/del")  # gives "CAY3217"
+
+    # Delete the command message immediately so chat stays clean
+    try:
+        await message.delete()
+    except Exception:
+        pass
+
+    deleted = await delete_saved_nickname_by_code(message.from_user.id, code)
+
+    nicknames = await get_saved_nicknames(message.from_user.id)
+
+    if deleted:
+        if nicknames:
+            text, kb = await build_saved_nicknames_message(nicknames, page=0)
+            await message.answer(text, reply_markup=kb, parse_mode="HTML")
+        else:
+            await message.answer(
+                "🗃 <b>My Saved Nicknames</b>\n\nNo saved nicknames left.",
+                parse_mode="HTML",
+                reply_markup=get_nickname_menu_keyboard(),
+            )
+    else:
+        await message.answer("❌ Couldn't delete — code not found or doesn't belong to you.")
 
 # ─────────────────────────────────────────────
 #  Create Nickname flow
@@ -296,7 +316,7 @@ async def handle_nick_text_input(message: types.Message, state: FSMContext):
     await state.clear()
     await remove_reply_keyboard(message)
 
-    kb = get_keyboard(0)
+    kb   = get_keyboard(0)
     sent = await message.answer(
         f"<b>Ready: {text}</b>\n"
         f"---------------------------------------------\n\n"
@@ -307,8 +327,8 @@ async def handle_nick_text_input(message: types.Message, state: FSMContext):
 
     user_key = f"{message.chat.id}_{sent.message_id}"
     user_original_texts[user_key] = text
-    user_current_pages[user_key] = 0
-    user_current_fonts[user_key] = None
+    user_current_pages[user_key]  = 0
+    user_current_fonts[user_key]  = None
 
 # ─────────────────────────────────────────────
 #  Font selection
@@ -321,30 +341,29 @@ async def process_font_selection(callback: types.CallbackQuery):
             await callback.answer("❌ Invalid Font Selected!", show_alert=True)
             return
 
-        font_data = fonts[font_idx]
-        font_name = font_data["fontName"]
+        font_data  = fonts[font_idx]
+        font_name  = font_data["fontName"]
+        user_key   = f"{callback.message.chat.id}_{callback.message.message_id}"
+        orig_text  = user_original_texts.get(user_key, "")
+        cur_page   = user_current_pages.get(user_key, 0)
+        cur_font   = user_current_fonts.get(user_key)
 
-        user_key = f"{callback.message.chat.id}_{callback.message.message_id}"
-        original_text  = user_original_texts.get(user_key, "")
-        current_page   = user_current_pages.get(user_key, 0)
-        current_font   = user_current_fonts.get(user_key)
-
-        if current_font == font_idx:
+        if cur_font == font_idx:
             await callback.answer(f"❌ Already Applied {font_name} Style", show_alert=True)
             return
 
-        if not original_text:
-            lines = (callback.message.text or "").split("\n\n", 1)
-            original_text = lines[1] if len(lines) > 1 else callback.message.text or ""
+        if not orig_text:
+            lines    = (callback.message.text or "").split("\n\n", 1)
+            orig_text = lines[1] if len(lines) > 1 else callback.message.text or ""
 
-        converted = convert_text(original_text, font_data)
-        kb = get_keyboard(current_page, active_font_idx=font_idx)
+        converted = convert_text(orig_text, font_data)
+        kb        = get_keyboard(cur_page, active_font_idx=font_idx)
 
         await callback.message.edit_text(
             f"<b>{font_idx + 1}. Ready: {converted}</b>\n"
             f"---------------------------------------------\n\n"
             f"◼️ <b>Copy:</b> <code>{converted}</code> 👈 ({font_name})\n"
-            f"◻️ <b>Original:</b> {original_text}",
+            f"◻️ <b>Original:</b> {orig_text}",
             reply_markup=kb,
         )
 
@@ -365,22 +384,22 @@ async def process_font_selection(callback: types.CallbackQuery):
 # ─────────────────────────────────────────────
 @dp.callback_query(F.data == "save_nick")
 async def process_save_nick(callback: types.CallbackQuery):
-    user_key   = f"{callback.message.chat.id}_{callback.message.message_id}"
-    font_idx   = user_current_fonts.get(user_key)
-    orig_text  = user_original_texts.get(user_key, "")
+    user_key  = f"{callback.message.chat.id}_{callback.message.message_id}"
+    font_idx  = user_current_fonts.get(user_key)
+    orig_text = user_original_texts.get(user_key, "")
 
     if font_idx is None or not orig_text:
         await callback.answer("❌ No font selected yet!", show_alert=True)
         return
 
-    font_data  = fonts[font_idx]
-    font_name  = font_data["fontName"]
-    converted  = convert_text(orig_text, font_data)
+    font_data = fonts[font_idx]
+    font_name = font_data["fontName"]
+    converted = convert_text(orig_text, font_data)
 
     # Ensure user is registered
     await register_user(callback.from_user.id, callback.from_user.username, callback.from_user.first_name)
 
-    success, reason = await save_nickname(
+    success, result = await save_nickname(
         user_id=callback.from_user.id,
         original_text=orig_text,
         converted_text=converted,
@@ -390,14 +409,16 @@ async def process_save_nick(callback: types.CallbackQuery):
     if success:
         saved_count = await get_saved_count(callback.from_user.id)
         await callback.answer(
-            f"⭐ Saved! ({saved_count}/{MAX_SAVED_PER_USER})",
-            show_alert=False,
+            f"✅ Nickname saved!\n"
+            f"Code: {result}\n"
+            f"You have {saved_count} of {MAX_SAVED_PER_USER} nicknames saved.",
+            show_alert=True,
         )
-    elif reason == "already_saved":
+    elif result == "already_saved":
         await callback.answer("📋 Already in your saved list!", show_alert=True)
-    elif reason == "limit_reached":
+    elif result == "limit_reached":
         await callback.answer(
-            f"❌ Limit reached ({MAX_SAVED_PER_USER} nicknames max). Delete some first.",
+            f"❌ Limit reached ({MAX_SAVED_PER_USER} max). Delete some first.",
             show_alert=True,
         )
 
@@ -410,83 +431,25 @@ async def handle_my_nicknames(message: types.Message):
     await remove_reply_keyboard(message)
 
     nicknames = await get_saved_nicknames(message.from_user.id)
-
     if not nicknames:
         await message.answer(
-            "🗃 <b>My Saved Nicknames</b>\n\n"
-            "You haven't saved any nicknames yet.\n"
+            "🗃 <b>My Saved Nicknames</b>\n\nYou haven't saved any nicknames yet.\n"
             "Create one and tap <b>⭐ Save Nickname</b>!",
             parse_mode="HTML",
             reply_markup=get_nickname_menu_keyboard(),
         )
         return
 
-    kb = get_saved_nicknames_keyboard(nicknames, page=0)
-    await message.answer(
-        f"🗃 <b>My Saved Nicknames</b> ({len(nicknames)}/{MAX_SAVED_PER_USER})\n\n"
-        f"Tap a nickname to copy it, or 🗑 to delete.",
-        parse_mode="HTML",
-        reply_markup=kb,
-    )
+    text, kb = await build_saved_nicknames_message(nicknames, page=0)
+    await message.answer(text, reply_markup=kb, parse_mode="HTML")
 
 @dp.callback_query(F.data.startswith("savedpage_"))
 async def process_saved_page(callback: types.CallbackQuery):
-    page = int(callback.data.split("_")[1])
+    page      = int(callback.data.split("_")[1])
     nicknames = await get_saved_nicknames(callback.from_user.id)
-    kb = get_saved_nicknames_keyboard(nicknames, page=page)
-    await callback.message.edit_reply_markup(reply_markup=kb)
+    text, kb  = await build_saved_nicknames_message(nicknames, page=page)
+    await callback.message.edit_text(text, reply_markup=kb, parse_mode="HTML")
     await callback.answer()
-
-@dp.callback_query(F.data.startswith("viewnick_"))
-async def process_view_nick(callback: types.CallbackQuery):
-    nick_id = int(callback.data.split("_")[1])
-    nicknames = await get_saved_nicknames(callback.from_user.id)
-    nick = next((n for n in nicknames if n["id"] == nick_id), None)
-    if not nick:
-        await callback.answer("❌ Not found!", show_alert=True)
-        return
-    await callback.answer(
-        f"📋 {nick['converted_text']}\nFont: {nick['font_name']}",
-        show_alert=True,
-    )
-
-@dp.callback_query(F.data.startswith("delnick_"))
-async def process_delete_nick(callback: types.CallbackQuery):
-    parts     = callback.data.split("_")
-    nick_id   = int(parts[1])
-    page      = int(parts[2]) if len(parts) > 2 else 0
-
-    deleted = await delete_saved_nickname(callback.from_user.id, nick_id)
-    if not deleted:
-        await callback.answer("❌ Couldn't delete!", show_alert=True)
-        return
-
-    nicknames = await get_saved_nicknames(callback.from_user.id)
-
-    if not nicknames:
-        await callback.message.edit_text(
-            "🗃 <b>My Saved Nicknames</b>\n\nYou have no saved nicknames.",
-            parse_mode="HTML",
-            reply_markup=InlineKeyboardMarkup(inline_keyboard=[[
-                InlineKeyboardButton(text="⤵️ Back", callback_data="close_saved")
-            ]]),
-        )
-        await callback.answer("🗑 Deleted!")
-        return
-
-    # Stay on same page, but clamp if it no longer exists
-    per_page    = 5
-    total_pages = (len(nicknames) + per_page - 1) // per_page
-    page        = min(page, total_pages - 1)
-
-    kb = get_saved_nicknames_keyboard(nicknames, page=page)
-    await callback.message.edit_text(
-        f"🗃 <b>My Saved Nicknames</b> ({len(nicknames)}/{MAX_SAVED_PER_USER})\n\n"
-        f"Tap a nickname to copy it, or 🗑 to delete.",
-        parse_mode="HTML",
-        reply_markup=kb,
-    )
-    await callback.answer("🗑 Deleted!")
 
 @dp.callback_query(F.data == "close_saved")
 async def process_close_saved(callback: types.CallbackQuery):
@@ -507,12 +470,10 @@ async def process_close_saved(callback: types.CallbackQuery):
 # ─────────────────────────────────────────────
 @dp.message(F.text == "📗 About the Bot")
 async def handle_about_bot(message: types.Message):
-    keyboard = InlineKeyboardMarkup(inline_keyboard=[
-        [
-            InlineKeyboardButton(text="📢 Updates Channel", url="https://t.me/caysredirect"),
-            InlineKeyboardButton(text="⤵️ Back", callback_data="close_about"),
-        ],
-    ])
+    keyboard = InlineKeyboardMarkup(inline_keyboard=[[
+        InlineKeyboardButton(text="📢 Updates Channel", url="https://t.me/caysredirect"),
+        InlineKeyboardButton(text="⤵️ Back", callback_data="close_about"),
+    ]])
     await remove_reply_keyboard(message)
     await message.answer(START_MSG, reply_markup=keyboard, parse_mode="HTML")
 
@@ -537,11 +498,11 @@ async def process_close_about(callback: types.CallbackQuery):
 @dp.callback_query(F.data.startswith("page_"))
 async def process_pagination(callback: types.CallbackQuery):
     try:
-        page = int(callback.data.split("_")[1])
+        page     = int(callback.data.split("_")[1])
         user_key = f"{callback.message.chat.id}_{callback.message.message_id}"
         user_current_pages[user_key] = page
-        active_font_idx = user_current_fonts.get(user_key)
-        kb = get_keyboard(page, active_font_idx=active_font_idx)
+        active   = user_current_fonts.get(user_key)
+        kb       = get_keyboard(page, active_font_idx=active)
         await callback.message.edit_reply_markup(reply_markup=kb)
         await callback.answer(f"📄 Page {page + 1}", show_alert=False)
     except Exception as e:
