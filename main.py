@@ -223,7 +223,7 @@ async def remove_reply_keyboard(message: types.Message):
     dummy = await message.answer("ㅤ", reply_markup=ReplyKeyboardRemove(), disable_notification=True)
     await dummy.delete()
 
-START_MSG = """👋 <b>Welcome to Cay Magic 🖌 Bot!</b>
+START_MSG = """
 
 <b>In short, in this bot, you can create your nickname using various decorations and fonts, and save it so you can find it whenever you need it!!</b>
 
@@ -470,12 +470,20 @@ async def process_close_saved(callback: types.CallbackQuery):
 # ─────────────────────────────────────────────
 @dp.message(F.text == "📗 About the Bot")
 async def handle_about_bot(message: types.Message):
+    total_users = await get_total_users()
+    total_fonts_used = await get_total_font_uses()
+
+    stats_header = (
+        f"👥 <b>Active Users:</b> {total_users}\n"
+        f"🎨 <b>Total Font Styles:</b> {len(fonts)}\n"
+        f"✨ <b>Total Font Applications:</b> {total_fonts_used}\n\n"
+    )
     keyboard = InlineKeyboardMarkup(inline_keyboard=[[
         InlineKeyboardButton(text="📢 Updates Channel", url="https://t.me/caysredirect"),
         InlineKeyboardButton(text="⤵️ Back", callback_data="close_about"),
     ]])
     await remove_reply_keyboard(message)
-    await message.answer(START_MSG, reply_markup=keyboard, parse_mode="HTML")
+    await message.answer(stats_header + START_MSG, reply_markup=keyboard, parse_mode="HTML")
 
 @dp.callback_query(F.data == "close_about")
 async def process_close_about(callback: types.CallbackQuery):
