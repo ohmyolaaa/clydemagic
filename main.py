@@ -48,7 +48,8 @@ logger.info("Bot starting up...")
 user_original_texts: dict[str, str] = {}
 user_current_pages:  dict[str, int] = {}
 user_current_fonts:  dict[str, int | None] = {}
-user_session_times:  dict[str, float] = {}  # ← add this
+user_session_times:  dict[str, float] = {}
+saved_list_message_ids: dict[int, int] = {}
 
 SESSION_TTL = 60 * 30  # 30 minutes
 
@@ -297,6 +298,13 @@ async def cmd_start(message: types.Message):
 # ─────────────────────────────────────────────
 #  /admin
 # ─────────────────────────────────────────────
+async def _auto_delete_toast(msg: types.Message, delay: int = 2):
+    await asyncio.sleep(delay)
+    try:
+        await msg.delete()
+    except Exception:
+        pass
+
 @dp.message(F.text == "⚙️ Admin Panel")
 async def handle_admin_panel_button(message: types.Message, state: FSMContext):
     from maintenance import ADMIN_IDS, _admin_text, _admin_keyboard
@@ -320,19 +328,58 @@ async def handle_del_command(message: types.Message):
 
     deleted = await delete_saved_nickname_by_code(message.from_user.id, code)
     nicknames = await get_saved_nicknames(message.from_user.id)
+    list_msg_id = saved_list_message_ids.get(message.from_user.id)
 
     if deleted:
+        # ── Show a brief toast then auto-delete it ──
+        toast = await message.answer("✅ <b>Nickname deleted!</b>", parse_mode="HTML")
+        asyncio.create_task(_auto_delete_toast(toast, delay=2))
+
         if nicknames:
             text, kb = await build_saved_nicknames_message(nicknames, page=0)
-            await message.answer(text, reply_markup=kb, parse_mode="HTML")
+            if list_msg_id:
+                try:
+                    await bot.edit_message_text(
+                        chat_id=message.chat.id,
+                        message_id=list_msg_id,
+                        text=text,
+                        reply_markup=kb,
+                        parse_mode="HTML",
+                    )
+                except Exception:
+                    sent = await message.answer(text, reply_markup=kb, parse_mode="HTML")
+                    saved_list_message_ids[message.from_user.id] = sent.message_id
+            else:
+                sent = await message.answer(text, reply_markup=kb, parse_mode="HTML")
+                saved_list_message_ids[message.from_user.id] = sent.message_id
         else:
-            await message.answer(
-                "🗃 <b>My Saved Nicknames</b>\n\nNo saved nicknames left.",
-                parse_mode="HTML",
-                reply_markup=get_nickname_menu_keyboard(message.from_user.id),
-            )
+            saved_list_message_ids.pop(message.from_user.id, None)
+            if list_msg_id:
+                try:
+                    await bot.edit_message_text(
+                        chat_id=message.chat.id,
+                        message_id=list_msg_id,
+                        text="🗃 <b>My Saved Nicknames</b>\n\nNo saved nicknames left.",
+                        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                            [InlineKeyboardButton(text="⤵️ Back", callback_data="close_saved")]
+                        ]),
+                        parse_mode="HTML",
+                    )
+                except Exception:
+                    await message.answer(
+                        "🗃 <b>My Saved Nicknames</b>\n\nNo saved nicknames left.",
+                        parse_mode="HTML",
+                        reply_markup=get_nickname_menu_keyboard(message.from_user.id),
+                    )
+            else:
+                await message.answer(
+                    "🗃 <b>My Saved Nicknames</b>\n\nNo saved nicknames left.",
+                    parse_mode="HTML",
+                    reply_markup=get_nickname_menu_keyboard(message.from_user.id),
+                )
     else:
-        await message.answer("❌ Couldn't delete — code not found or doesn't belong to you.")
+        toast = await message.answer("❌ <b>Couldn't delete — code not found or doesn't belong to you.</b>", parse_mode="HTML")
+        asyncio.create_task(_auto_delete_toast(toast, delay=3))
 
 # ─────────────────────────────────────────────
 #  Create Nickname flow
@@ -471,7 +518,10 @@ async def handle_my_nicknames(message: types.Message):
         return
 
     text, kb = await build_saved_nicknames_message(nicknames, page=0)
-    await message.answer(text, reply_markup=kb, parse_mode="HTML")
+    sent = await message.answer(text, reply_markup=kb, parse_mode="HTML")
+    
+    # ── Store the message ID so /del can edit it later ──
+    saved_list_message_ids[message.from_user.id] = sent.message_id
 
 @dp.callback_query(F.data.startswith("savedpage_"))
 async def process_saved_page(callback: types.CallbackQuery):
@@ -484,6 +534,9 @@ async def process_saved_page(callback: types.CallbackQuery):
 @dp.callback_query(F.data == "close_saved")
 async def process_close_saved(callback: types.CallbackQuery):
     try:
+        # ── Clean up stored message ID ──
+        saved_list_message_ids.pop(callback.from_user.id, None)
+        
         await callback.message.delete()
         await callback.bot.send_message(
             chat_id=callback.message.chat.id,
