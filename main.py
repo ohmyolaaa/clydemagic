@@ -1,6 +1,7 @@
 import json
 import asyncio
 import logging
+import time
 from pathlib import Path
 from aiogram import Bot, Dispatcher, types
 from aiogram.filters import Command
@@ -41,6 +42,31 @@ logger = logging.getLogger("FontStyleBot")
 logger.info("Bot starting up...")
 
 # ─────────────────────────────────────────────
+#  In-memory session state (per message)
+# ─────────────────────────────────────────────
+user_original_texts: dict[str, str] = {}
+user_current_pages:  dict[str, int] = {}
+user_current_fonts:  dict[str, int | None] = {}
+user_session_times:  dict[str, float] = {}  # ← add this
+
+SESSION_TTL = 60 * 30  # 30 minutes
+
+def touch_session(user_key: str):
+    user_session_times[user_key] = time.time()
+
+def cleanup_sessions():
+    now = time.time()
+    expired = [k for k, t in user_session_times.items() if now - t > SESSION_TTL]
+    for k in expired:
+        user_original_texts.pop(k, None)
+        user_current_pages.pop(k, None)
+        user_current_fonts.pop(k, None)
+        user_session_times.pop(k, None)
+    if expired:
+        logger.info(f"Cleaned up {len(expired)} expired sessions")
+
+
+# ─────────────────────────────────────────────
 #  Bot setup
 # ─────────────────────────────────────────────
 BOT_TOKEN = "8975741273:AAERFWG11zY8_e9q47qZDjRQsD1oTzOPSas"
@@ -66,13 +92,6 @@ BotCommands = ["/", ".", "!", "#", "$"]
 # ─────────────────────────────────────────────
 class NickStates(StatesGroup):
     waiting_for_nick_text = State()
-
-# ─────────────────────────────────────────────
-#  In-memory session state (per message)
-# ─────────────────────────────────────────────
-user_original_texts: dict[str, str] = {}
-user_current_pages:  dict[str, int] = {}
-user_current_fonts:  dict[str, int | None] = {}
 
 # ─────────────────────────────────────────────
 #  Fonts
@@ -262,6 +281,7 @@ async def handle_admin_panel_button(message: types.Message, state: FSMContext):
     if message.from_user.id not in ADMIN_IDS:
         return
     await state.clear()
+    await remove_reply_keyboard(message)
     await message.answer(_admin_text(), reply_markup=_admin_keyboard(), parse_mode="HTML")
 
 # ─────────────────────────────────────────────
@@ -324,6 +344,7 @@ async def handle_nick_text_input(message: types.Message, state: FSMContext):
     user_original_texts[user_key] = text
     user_current_pages[user_key]  = 0
     user_current_fonts[user_key]  = None
+    touch_session(user_key)
 
 # ─────────────────────────────────────────────
 #  Font selection
@@ -363,6 +384,7 @@ async def process_font_selection(callback: types.CallbackQuery):
         )
 
         user_current_fonts[user_key] = font_idx
+        touch_session(user_key)
         await increment_font_stat(font_name)
         await callback.answer(f"✨ {font_name} Style Applied!", show_alert=False)
         logger.info(f"User {callback.from_user.id} applied font '{font_name}'")
@@ -512,6 +534,7 @@ async def process_close(callback: types.CallbackQuery):
     user_original_texts.pop(user_key, None)
     user_current_pages.pop(user_key, None)
     user_current_fonts.pop(user_key, None)
+    user_session_times.pop(user_key, None)
 
     try:
         await callback.message.delete()
@@ -526,6 +549,11 @@ async def process_close(callback: types.CallbackQuery):
         logger.error(f"Error closing menu: {e}")
         await callback.answer("❌ Failed to close menu!", show_alert=True)
 
+
+async def session_cleanup_loop():
+    while True:
+        await asyncio.sleep(60 * 10)  # run every 10 minutes
+        cleanup_sessions()
 # ─────────────────────────────────────────────
 #  Entry point
 # ─────────────────────────────────────────────
@@ -533,7 +561,8 @@ async def main():
     try:
         load_fonts()
         await init_db()
-        await init_maintenance()   # ← loads maintenance state from DB
+        await init_maintenance()
+        asyncio.create_task(session_cleanup_loop())  # ← add this
         logger.info("Bot Successfully Started 💥")
         await dp.start_polling(
             bot,
