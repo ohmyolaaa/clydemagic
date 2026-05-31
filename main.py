@@ -23,6 +23,7 @@ from database import (
     get_total_users, get_total_font_uses, get_top_fonts,
     save_nickname, get_saved_nicknames, delete_saved_nickname_by_code,
     get_saved_count, increment_font_stat,
+    get_new_users_today, get_total_nicknames_saved,
 )
 from maintenance import (
     maintenance_router,
@@ -287,13 +288,33 @@ START_MSG = """
 # ─────────────────────────────────────────────
 @dp.message(Command(commands=["start"], prefix=BotCommands))
 async def cmd_start(message: types.Message):
-    await register_user(message.from_user.id, message.from_user.username, message.from_user.first_name)
+    user = message.from_user
+    is_new = await register_user(user.id, user.username, user.first_name)
+    
     await message.answer(
         "<b>Select an option below to create your unique nickname.</b>",
-        reply_markup=get_nickname_menu_keyboard(message.from_user.id),
+        reply_markup=get_nickname_menu_keyboard(user.id),
         parse_mode="HTML",
     )
-    logger.info(f"User {message.from_user.id} started the bot")
+
+    # ── Notify admins if brand new user ──
+    if is_new:
+        username_display = f"@{user.username}" if user.username else "No username"
+        notif_text = (
+            f"👤 <b>New User Joined!</b>\n"
+            f"━━━━━━━━━━━━━━━━━━━━━━━━\n"
+            f"🙍 <b>Name:</b> {user.first_name}\n"
+            f"🆔 <b>ID:</b> <code>{user.id}</code>\n"
+            f"📛 <b>Username:</b> {username_display}\n"
+            f"🕒 <b>Time:</b> {datetime.now(timezone.utc).strftime('%B %d, %Y %I:%M %p')} UTC"
+        )
+        for admin_id in ADMIN_IDS:
+            try:
+                await bot.send_message(chat_id=admin_id, text=notif_text, parse_mode="HTML")
+            except Exception as e:
+                logger.warning(f"Failed to notify admin {admin_id}: {e}")
+
+    logger.info(f"User {user.id} started the bot")
 
 # ─────────────────────────────────────────────
 #  /admin
@@ -312,7 +333,11 @@ async def handle_admin_panel_button(message: types.Message, state: FSMContext):
         return
     await state.clear()
     await remove_reply_keyboard(message)
-    await message.answer(_admin_text(), reply_markup=_admin_keyboard(), parse_mode="HTML")
+    await message.answer(
+        await _admin_text(), 
+        reply_markup=_admin_keyboard(),
+        parse_mode="HTML"
+    )
 
 # ─────────────────────────────────────────────
 #  /delCAYXXXX — delete saved nickname by code

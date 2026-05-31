@@ -72,14 +72,43 @@ async def init_db():
 # ─────────────────────────────────────────────
 #  Users
 # ─────────────────────────────────────────────
-async def register_user(telegram_id: int, username: str | None, first_name: str | None):
+async def register_user(telegram_id: int, username: str | None, first_name: str | None) -> bool:
+    """Returns True if brand new user, False if already existed."""
     pool = await get_pool()
     async with pool.acquire() as conn:
+        existing = await conn.fetchrow(
+            "SELECT telegram_id FROM users WHERE telegram_id = $1", telegram_id
+        )
+
+        if existing:
+            # Update username/first_name in case they changed
+            await conn.execute(
+                "UPDATE users SET username = $1, first_name = $2 WHERE telegram_id = $3",
+                username, first_name, telegram_id
+            )
+            return False  # ← not new
+
+        # New user
         await conn.execute("""
             INSERT INTO users (telegram_id, username, first_name, joined_at)
             VALUES ($1, $2, $3, $4)
-            ON CONFLICT (telegram_id) DO NOTHING
         """, telegram_id, username, first_name, datetime.utcnow().isoformat())
+        return True  # ← brand new
+
+async def get_new_users_today() -> int:
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        today = datetime.utcnow().date().isoformat()
+        val = await conn.fetchval(
+            "SELECT COUNT(*) FROM users WHERE joined_at::date::text = $1", today
+        )
+        return val or 0
+
+async def get_total_nicknames_saved() -> int:
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        val = await conn.fetchval("SELECT COUNT(*) FROM saved_nicknames")
+        return val or 0
 
 async def get_total_users() -> int:
     pool = await get_pool()

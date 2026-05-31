@@ -19,6 +19,9 @@ from aiogram.fsm.state import State, StatesGroup
 from database import (
     get_maintenance_state,
     set_maintenance_state,
+    get_total_users,
+    get_new_users_today,
+    get_total_nicknames_saved
 )
 
 logger = logging.getLogger("FontStyleBot.maintenance")
@@ -68,12 +71,22 @@ def _admin_keyboard() -> InlineKeyboardMarkup:
         [InlineKeyboardButton(text="🔄 Refresh",            callback_data="admin_refresh")],
     ])
 
-def _admin_text() -> str:
-    status = "🔴 <b>ON</b>" if _maintenance_enabled else "🟢 <b>OFF</b>"
+async def _admin_text() -> str:
+    total_users = await get_total_users()
+    new_today   = await get_new_users_today()
+    total_nicks = await get_total_nicknames_saved()
+
+    status = "🔴 ON" if _maintenance_enabled else "🟢 OFF"
     return (
         f"🛠 <b>Admin Panel</b>\n\n"
-        f"Maintenance: {status}\n\n"
-        f"<b>Users see:</b>\n<i>{_maintenance_message}</i>"
+        f"🔧 <b>Maintenance:</b> {status}\n\n"
+        f"👥 <b>Users see:</b>\n"
+        f"<i>{_maintenance_message}</i>\n\n"
+        f"━━━━━━━━━━━━━━━━━━━━━━━━\n"
+        f"📊 <b>Stats</b>\n"
+        f"├ 👥 Total Users: <b>{total_users}</b>\n"
+        f"├ 🆕 New Today: <b>{new_today}</b>\n"
+        f"└ 📜 Nicknames Saved: <b>{total_nicks}</b>"
     )
 
 # ─────────────────────────────────────────────
@@ -105,7 +118,11 @@ async def cmd_admin_panel(message: types.Message, state: FSMContext):
     if message.from_user.id not in ADMIN_IDS:
         return
     await state.clear()
-    await message.answer(_admin_text(), reply_markup=_admin_keyboard(), parse_mode="HTML")
+    await message.answer(
+        await _admin_text(),
+        reply_markup=_admin_keyboard(), 
+        parse_mode="HTML"
+    )
 
 # ─────────────────────────────────────────────
 #  Broadcast helpers
@@ -141,7 +158,11 @@ async def cb_admin_toggle(callback: types.CallbackQuery):
     await set_maintenance_state(_maintenance_enabled, _maintenance_message)
 
     toast = "🔴 Maintenance ON" if _maintenance_enabled else "🟢 Maintenance OFF"
-    await callback.message.edit_text(_admin_text(), reply_markup=_admin_keyboard(), parse_mode="HTML")
+    await callback.message.edit_text(
+        await _admin_text(), 
+        reply_markup=_admin_keyboard(), 
+        parse_mode="HTML"
+    )
     await callback.answer(toast, show_alert=False)
     logger.info(f"Admin {callback.from_user.id} → maintenance={_maintenance_enabled}")
 
@@ -174,7 +195,11 @@ async def handle_status_input(message: types.Message, state: FSMContext):
 
     if message.text and message.text.strip() == "/cancel":
         await state.clear()
-        await message.answer(_admin_text(), reply_markup=_admin_keyboard(), parse_mode="HTML")
+        await message.answer(
+            await _admin_text(), 
+            reply_markup=_admin_keyboard(), 
+            parse_mode="HTML"
+        )
         return
 
     _maintenance_message = message.text.strip()
@@ -183,7 +208,11 @@ async def handle_status_input(message: types.Message, state: FSMContext):
 
     # Send a separate confirmation that auto-deletes after 3 seconds
     confirm = await message.answer("✅ Message updated!")
-    await message.answer(_admin_text(), reply_markup=_admin_keyboard(), parse_mode="HTML")
+    await message.answer(
+        await _admin_text(), 
+        reply_markup=_admin_keyboard(), 
+        parse_mode="HTML"
+    )
 
     async def _delete_later():
         await asyncio.sleep(3)
@@ -203,7 +232,11 @@ async def cb_admin_refresh(callback: types.CallbackQuery):
         await callback.answer("⛔ Not authorised", show_alert=True)
         return
     try:
-        await callback.message.edit_text(_admin_text(), reply_markup=_admin_keyboard(), parse_mode="HTML")
+        await callback.message.edit_text(
+            await _admin_text(), 
+            reply_markup=_admin_keyboard(), 
+            parse_mode="HTML"
+        )
         await callback.answer("🔄 Refreshed", show_alert=False)
     except Exception:
         await callback.answer("✅ Already up to date!", show_alert=False)
