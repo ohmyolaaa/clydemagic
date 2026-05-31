@@ -78,11 +78,11 @@ async def _admin_text() -> str:
 
     status = "🔴 ON" if _maintenance_enabled else "🟢 OFF"
     return (
-        f"🛠 <b>Admin Panel</b>\n\n"
+        f"🛠 <b>Admin Panel</b>\n"
+        f"━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
         f"🔧 <b>Maintenance:</b> {status}\n\n"
         f"👥 <b>Users see:</b>\n"
         f"<i>{_maintenance_message}</i>\n\n"
-        f"━━━━━━━━━━━━━━━━━━━━━━━━\n"
         f"📊 <b>Stats</b>\n"
         f"├ 👥 Total Users: <b>{total_users}</b>\n"
         f"├ 🆕 New Today: <b>{new_today}</b>\n"
