@@ -257,39 +257,12 @@ async def cmd_start(message: types.Message):
 #  /admin
 # ─────────────────────────────────────────────
 @dp.message(F.text == "⚙️ Admin Panel")
-async def handle_admin_panel(message: types.Message):
-    from maintenance import ADMIN_IDS
+async def handle_admin_panel_button(message: types.Message, state: FSMContext):
+    from maintenance import ADMIN_IDS, _admin_text, _admin_keyboard
     if message.from_user.id not in ADMIN_IDS:
-        return  # silently ignore
-
-    total_users = await get_total_users()
-    total_uses  = await get_total_font_uses()
-    top_fonts   = await get_top_fonts(5)
-
-    top_lines = "\n".join(
-        f"  {i+1}. {f['font_name']} — {f['use_count']} uses"
-        for i, f in enumerate(top_fonts)
-    ) or "  No data yet"
-
-    keyboard = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="🔧 Toggle Maintenance", callback_data="admin_toggle_maintenance")],
-        [InlineKeyboardButton(text="⤵️ Close", callback_data="close_admin")],
-    ])
-
-    await message.answer(
-        f"⚙️ <b>Admin Panel</b>\n\n"
-        f"👥 Total Users: <b>{total_users}</b>\n"
-        f"🎨 Font Styles: <b>{len(fonts)}</b>\n"
-        f"✨ Font Applications: <b>{total_uses}</b>\n\n"
-        f"🔥 <b>Top 5 Fonts:</b>\n{top_lines}",
-        reply_markup=keyboard,
-        parse_mode="HTML",
-    )
-
-@dp.callback_query(F.data == "close_admin")
-async def process_close_admin(callback: types.CallbackQuery):
-    await callback.message.delete()
-    await callback.answer()
+        return
+    await state.clear()
+    await message.answer(_admin_text(), reply_markup=_admin_keyboard(), parse_mode="HTML")
 
 # ─────────────────────────────────────────────
 #  /delCAYXXXX — delete saved nickname by code
