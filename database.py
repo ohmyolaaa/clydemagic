@@ -7,8 +7,6 @@ from datetime import datetime
 
 logger = logging.getLogger("FontStyleBot.DB")
 
-MAX_SAVED_PER_USER = 20
-
 DATABASE_URL = os.environ["DATABASE_URL"]
 
 def generate_code() -> str:
@@ -67,14 +65,6 @@ async def save_nickname(user_id, original_text, converted_text, font_name):
     if existing:
         await conn.close()
         return False, "already_saved"
-
-    # Check limit
-    count = await conn.fetchval(
-        "SELECT COUNT(*) FROM saved_nicknames WHERE user_id = $1", user_id
-    )
-    if count >= MAX_SAVED_PER_USER:
-        await conn.close()
-        return False, "limit_reached"
 
     # Generate unique code
     while True:

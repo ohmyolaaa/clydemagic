@@ -21,7 +21,6 @@ from database import (
     get_total_users, get_total_font_uses, get_top_fonts,
     save_nickname, get_saved_nicknames, delete_saved_nickname_by_code,
     get_saved_count, increment_font_stat,
-    MAX_SAVED_PER_USER,
 )
 
 # ─────────────────────────────────────────────
@@ -197,7 +196,7 @@ async def build_saved_nicknames_message(nicknames: list[dict], page: int = 0):
         )
 
     text = (
-        f"🗃 <b>My Saved Nicknames</b> ({len(nicknames)}/{MAX_SAVED_PER_USER})\n\n"
+        f"🗃 <b>My Saved Nicknames</b> ({len(nicknames)})\n\n"
         + "\n".join(lines)
         + "\n\n<i>Tap a nickname to copy • tap /delCAYXXXX to delete</i>"
     )
@@ -408,16 +407,11 @@ async def process_save_nick(callback: types.CallbackQuery):
         await callback.answer(
             f"✅ Nickname saved!\n"
             f"Code: {result}\n"
-            f"You have {saved_count} of {MAX_SAVED_PER_USER} nicknames saved.",
+            f"You have {saved_count} nicknames saved.",
             show_alert=True,
         )
     elif result == "already_saved":
         await callback.answer("📋 Already in your saved list!", show_alert=True)
-    elif result == "limit_reached":
-        await callback.answer(
-            f"❌ Limit reached ({MAX_SAVED_PER_USER} max). Delete some first.",
-            show_alert=True,
-        )
 
 # ─────────────────────────────────────────────
 #  My Nicknames
