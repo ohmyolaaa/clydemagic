@@ -22,6 +22,11 @@ from database import (
     save_nickname, get_saved_nicknames, delete_saved_nickname_by_code,
     get_saved_count, increment_font_stat,
 )
+from maintenance import (
+    maintenance_router,
+    MaintenanceMiddleware,
+    init_maintenance,
+)
 
 # ─────────────────────────────────────────────
 #  Logging
@@ -47,6 +52,13 @@ bot = Bot(token=BOT_TOKEN, session=session, default=default_properties)
 
 storage = MemoryStorage()
 dp = Dispatcher(storage=storage)
+
+# ─────────────────────────────────────────────
+#  Maintenance middleware + router  ← NEW
+# ─────────────────────────────────────────────
+dp.message.middleware(MaintenanceMiddleware())
+dp.callback_query.middleware(MaintenanceMiddleware())
+dp.include_router(maintenance_router)
 
 BotCommands = ["/", ".", "!", "#", "$"]
 
@@ -349,7 +361,7 @@ async def process_font_selection(callback: types.CallbackQuery):
             return
 
         if not orig_text:
-            lines    = (callback.message.text or "").split("\n\n", 1)
+            lines     = (callback.message.text or "").split("\n\n", 1)
             orig_text = lines[1] if len(lines) > 1 else callback.message.text or ""
 
         converted = convert_text(orig_text, font_data)
@@ -461,7 +473,7 @@ async def process_close_saved(callback: types.CallbackQuery):
 # ─────────────────────────────────────────────
 @dp.message(F.text == "📗 About the Bot")
 async def handle_about_bot(message: types.Message):
-    total_users = await get_total_users()
+    total_users      = await get_total_users()
     total_fonts_used = await get_total_font_uses()
 
     stats_header = (
@@ -538,6 +550,7 @@ async def main():
     try:
         load_fonts()
         await init_db()
+        await init_maintenance()   # ← loads maintenance state from DB
         logger.info("Bot Successfully Started 💥")
         await dp.start_polling(
             bot,
