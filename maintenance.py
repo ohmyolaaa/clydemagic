@@ -108,6 +108,26 @@ async def cmd_admin_panel(message: types.Message, state: FSMContext):
     await message.answer(_admin_text(), reply_markup=_admin_keyboard(), parse_mode="HTML")
 
 # ─────────────────────────────────────────────
+#  Broadcast helpers
+# ─────────────────────────────────────────────
+async def broadcast_maintenance_off(bot: Bot) -> None:
+    from database import get_all_user_ids
+    user_ids = await get_all_user_ids()
+    success, failed = 0, 0
+    for user_id in user_ids:
+        try:
+            await bot.send_message(
+                chat_id=user_id,
+                text="✅ <b>Bot is back online!</b>\n\nEverything is working again. Enjoy! 🎉",
+                parse_mode="HTML",
+            )
+            success += 1
+            await asyncio.sleep(0.05)  # avoid hitting Telegram rate limits
+        except Exception:
+            failed += 1
+    logger.info(f"Broadcast done → sent={success}, failed={failed}")
+
+# ─────────────────────────────────────────────
 #  Toggle maintenance (single button, ON↔OFF)
 # ─────────────────────────────────────────────
 @maintenance_router.callback_query(lambda c: c.data == "admin_toggle")
@@ -124,6 +144,10 @@ async def cb_admin_toggle(callback: types.CallbackQuery):
     await callback.message.edit_text(_admin_text(), reply_markup=_admin_keyboard(), parse_mode="HTML")
     await callback.answer(toast, show_alert=False)
     logger.info(f"Admin {callback.from_user.id} → maintenance={_maintenance_enabled}")
+
+    # Notify all users when coming back online
+    if not _maintenance_enabled:
+        asyncio.create_task(broadcast_maintenance_off(callback.bot))
 
 # ─────────────────────────────────────────────
 #  Set status message
