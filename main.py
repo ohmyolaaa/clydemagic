@@ -224,10 +224,7 @@ async def remove_reply_keyboard(message: types.Message):
     await dummy.delete()
 
 START_MSG = """
-
 <b>In short, in this bot, you can create your nickname using various decorations and fonts, and save it so you can find it whenever you need it!!</b>
-
-🔒 Works in <b>Private, Groups &amp; Supergroups</b>
 
 <i>If there are any errors, shortcomings, suggestions, or criticisms, you can feel free to write to @caydigitals 🤝🙋‍♂️</i>"""
 
@@ -476,7 +473,7 @@ async def handle_about_bot(message: types.Message):
     stats_header = (
         f"👥 <b>Active Users:</b> {total_users}\n"
         f"🎨 <b>Total Font Styles:</b> {len(fonts)}\n"
-        f"✨ <b>Total Font Applications:</b> {total_fonts_used}\n\n"
+        f"📜 <b>Total Font Applications:</b> {total_fonts_used}\n"
     )
     keyboard = InlineKeyboardMarkup(inline_keyboard=[[
         InlineKeyboardButton(text="📢 Updates Channel", url="https://t.me/caysredirect"),
