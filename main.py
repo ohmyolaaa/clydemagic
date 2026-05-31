@@ -99,9 +99,6 @@ async def handle_nick_text_input(message: types.Message, state: FSMContext):
     user_current_pages[user_key] = 0
     user_current_fonts[user_key] = None
 
-    # Remove the "Choose a font style above!" message and get_nickname_menu_keyboard here
-    # The reply keyboard will reappear automatically when user closes the inline menu
-
 FONTS_FILE = Path("fonts.json")
 fonts = []
 user_original_texts = {}
@@ -156,35 +153,51 @@ def load_fonts():
         logger.error(f"Invalid JSON in fonts.json: {e}")
         raise
 
+# ─────────────────────────────────────────────
+#  FIXED convert_text — handles all font types
+# ─────────────────────────────────────────────
+LEET_MAP = {
+    'a': '4', 'b': 'b', 'c': 'c', 'd': 'd', 'e': '3', 'f': 'f',
+    'g': '9', 'h': 'h', 'i': '1', 'j': 'j', 'k': 'k', 'l': '1',
+    'm': 'm', 'n': 'n', 'o': '0', 'p': 'p', 'q': 'q', 'r': 'r',
+    's': '5', 't': '7', 'u': 'u', 'v': 'v', 'w': 'w', 'x': 'x',
+    'y': 'y', 'z': '2',
+    'A': '4', 'B': 'B', 'C': 'C', 'D': 'D', 'E': '3', 'F': 'F',
+    'G': '9', 'H': 'H', 'I': '1', 'J': 'J', 'K': 'K', 'L': '1',
+    'M': 'M', 'N': 'N', 'O': '0', 'P': 'P', 'Q': 'Q', 'R': 'R',
+    'S': '5', 'T': '7', 'U': 'U', 'V': 'V', 'W': 'W', 'X': 'X',
+    'Y': 'Y', 'Z': '2',
+}
+
 def convert_text(text: str, font_data: dict) -> str:
-    lower = font_data.get("fontLower", "")
-    upper = font_data.get("fontUpper", "")
-    digits = font_data.get("fontDigits", "")
+    # ── Combiner fonts (Strikethrough, Underline, Zalgo) ──────────────
+    combiner = font_data.get("combiner")
+    if combiner:
+        return "".join(ch + combiner if ch.strip() else ch for ch in text)
 
-    lower_map = {}
-    upper_map = {}
-    digits_map = {}
+    # ── Leet speak ────────────────────────────────────────────────────
+    if font_data.get("leet"):
+        return "".join(LEET_MAP.get(ch, ch) for ch in text)
 
-    if isinstance(lower, list):
-        for i in range(min(len(lower), 26)):
-            lower_map[chr(97 + i)] = lower[i]
-    elif lower:
-        for i in range(min(len(lower), 26)):
-            lower_map[chr(97 + i)] = lower[i]
+    # ── Multi-char per letter fonts (lists) ───────────────────────────
+    lower_raw = font_data.get("fontLower", "")
+    upper_raw = font_data.get("fontUpper", "")
+    digits_raw = font_data.get("fontDigits", "")
 
-    if isinstance(upper, list):
-        for i in range(min(len(upper), 26)):
-            upper_map[chr(65 + i)] = upper[i]
-    elif upper:
-        for i in range(min(len(upper), 26)):
-            upper_map[chr(65 + i)] = upper[i]
+    if isinstance(lower_raw, list):
+        lower_map = {chr(97 + i): lower_raw[i] for i in range(min(len(lower_raw), 26))}
+    else:
+        lower_map = {chr(97 + i): lower_raw[i] for i in range(min(len(lower_raw), 26))} if lower_raw else {}
 
-    if isinstance(digits, list):
-        for i in range(min(len(digits), 10)):
-            digits_map[chr(48 + i)] = digits[i]
-    elif digits:
-        for i in range(min(len(digits), 10)):
-            digits_map[chr(48 + i)] = digits[i]
+    if isinstance(upper_raw, list):
+        upper_map = {chr(65 + i): upper_raw[i] for i in range(min(len(upper_raw), 26))}
+    else:
+        upper_map = {chr(65 + i): upper_raw[i] for i in range(min(len(upper_raw), 26))} if upper_raw else {}
+
+    if isinstance(digits_raw, list):
+        digits_map = {chr(48 + i): digits_raw[i] for i in range(min(len(digits_raw), 10))}
+    else:
+        digits_map = {chr(48 + i): digits_raw[i] for i in range(min(len(digits_raw), 10))} if digits_raw else {}
 
     result = []
     for char in text:
@@ -200,6 +213,9 @@ def convert_text(text: str, font_data: dict) -> str:
 
 def get_button_text(font_data: dict) -> str:
     font_name = font_data["fontName"]
+    # For combiner/leet fonts the name itself looks fine as-is
+    if font_data.get("combiner") or font_data.get("leet"):
+        return font_name
     return convert_text(font_name, font_data)
 
 def get_keyboard(page: int = 0):
@@ -284,7 +300,7 @@ async def process_font_selection(callback: types.CallbackQuery):
         if font_idx < 0 or font_idx >= len(fonts):
             await callback.answer("❌ Invalid Font Selected!", show_alert=True)
             return
-        
+
         font_data = fonts[font_idx]
         font_name = font_data["fontName"]
 
@@ -292,12 +308,12 @@ async def process_font_selection(callback: types.CallbackQuery):
         original_text = user_original_texts.get(user_key)
         current_page = user_current_pages.get(user_key, 0)
         current_font_idx = user_current_fonts.get(user_key)
-        
+
         if current_font_idx == font_idx:
             await callback.answer(f"❌ Already Applied {font_name} Style", show_alert=True)
             logger.info(f"User {callback.from_user.id} tried to reapply font '{font_name}'")
             return
-        
+
         if not original_text:
             current_text = callback.message.text or ""
             lines = current_text.split("\n\n", 1)
@@ -317,16 +333,12 @@ async def process_font_selection(callback: types.CallbackQuery):
             f"◻️ <b>Original:</b> {original_text}"
         )
 
-        await callback.message.edit_text(
-            text=new_message_text,
-            reply_markup=kb
-        )
-        
+        await callback.message.edit_text(text=new_message_text, reply_markup=kb)
         user_current_fonts[user_key] = font_idx
         
         await callback.answer(f"✨ {font_name} Style Applied!", show_alert=False)
         logger.info(f"User {callback.from_user.id} switched to font '{font_name}'")
-        
+
     except Exception as e:
         logger.error(f"Error editing message: {e}")
         await callback.answer("❌ Sorry Failed to apply style!", show_alert=True)
@@ -334,14 +346,10 @@ async def process_font_selection(callback: types.CallbackQuery):
 @dp.callback_query(F.data == "close")
 async def process_close(callback: types.CallbackQuery):
     user_key = f"{callback.message.chat.id}_{callback.message.message_id}"
-    
-    if user_key in user_original_texts:
-        del user_original_texts[user_key]
-    if user_key in user_current_pages:
-        del user_current_pages[user_key]
-    if user_key in user_current_fonts:
-        del user_current_fonts[user_key]
-    
+    user_original_texts.pop(user_key, None)
+    user_current_pages.pop(user_key, None)
+    user_current_fonts.pop(user_key, None)
+
     try:
         await callback.message.delete()
         # Restore bottom menu keyboard here after close
