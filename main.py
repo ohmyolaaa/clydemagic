@@ -45,7 +45,6 @@ logger.info("Bot starting up...")
 # ─────────────────────────────────────────────
 BOT_TOKEN = "8975741273:AAERFWG11zY8_e9q47qZDjRQsD1oTzOPSas"
 
-# Improved Bot Session with timeout
 session = AiohttpSession(timeout=30)
 default_properties = DefaultBotProperties(parse_mode="HTML")
 bot = Bot(token=BOT_TOKEN, session=session, default=default_properties)
@@ -169,7 +168,6 @@ def get_keyboard(page: int = 0, active_font_idx: int = None):
 
     has_next = end < len(fonts)
 
-    # Save button row (only shown when a font is active)
     if active_font_idx is not None:
         keyboard.append([InlineKeyboardButton(text="⭐ Save Nickname", callback_data="save_nick")])
 
@@ -195,7 +193,6 @@ def get_keyboard(page: int = 0, active_font_idx: int = None):
 
 
 async def build_saved_nicknames_message(nicknames: list[dict], page: int = 0):
-    """Build text + keyboard for the My Nicknames list using CAY codes."""
     per_page    = 5
     start       = page * per_page
     chunk       = nicknames[start:start + per_page]
@@ -213,7 +210,6 @@ async def build_saved_nicknames_message(nicknames: list[dict], page: int = 0):
         + "\n\n<i>Tap a nickname to copy • tap /delCAYXXXX to delete</i>"
     )
 
-    # nav buttons for pagination only
     nav = []
     if page > 0:
         nav.append(InlineKeyboardButton(text="↼ Prev", callback_data=f"savedpage_{page-1}"))
@@ -257,6 +253,10 @@ async def cmd_start(message: types.Message):
 # ─────────────────────────────────────────────
 @dp.message(Command(commands=["stats"], prefix=BotCommands))
 async def cmd_stats(message: types.Message):
+    from maintenance import ADMIN_IDS
+    if message.from_user.id not in ADMIN_IDS:
+        return  # silently ignore non-admins
+
     total_users = await get_total_users()
     total_uses  = await get_total_font_uses()
     top_fonts   = await get_top_fonts(5)
@@ -280,16 +280,14 @@ async def cmd_stats(message: types.Message):
 # ─────────────────────────────────────────────
 @dp.message(F.text.regexp(r"^/delCAY\d{4}$"))
 async def handle_del_command(message: types.Message):
-    code = message.text.strip().lstrip("/del")  # gives "CAY3217"
+    code = message.text.strip().lstrip("/del")
 
-    # Delete the command message immediately so chat stays clean
     try:
         await message.delete()
     except Exception:
         pass
 
     deleted = await delete_saved_nickname_by_code(message.from_user.id, code)
-
     nicknames = await get_saved_nicknames(message.from_user.id)
 
     if deleted:
@@ -376,10 +374,7 @@ async def process_font_selection(callback: types.CallbackQuery):
         )
 
         user_current_fonts[user_key] = font_idx
-
-        # Track usage in DB
         await increment_font_stat(font_name)
-
         await callback.answer(f"✨ {font_name} Style Applied!", show_alert=False)
         logger.info(f"User {callback.from_user.id} applied font '{font_name}'")
 
@@ -404,7 +399,6 @@ async def process_save_nick(callback: types.CallbackQuery):
     font_name = font_data["fontName"]
     converted = convert_text(orig_text, font_data)
 
-    # Ensure user is registered
     await register_user(callback.from_user.id, callback.from_user.username, callback.from_user.first_name)
 
     success, result = await save_nickname(
