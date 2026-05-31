@@ -5,7 +5,8 @@ Tables:
     saved_nicknames — user's favorite saved nicknames
     font_stats      — per-font usage counters
 """
-
+import random
+import string
 import aiosqlite
 import logging
 from pathlib import Path
@@ -15,6 +16,9 @@ logger = logging.getLogger("FontStyleBot.DB")
 
 DB_PATH = Path("bot_data.db")
 
+def generate_code() -> str:
+    digits = ''.join(random.choices(string.digits, k=4))
+    return f"CAY{digits}"
 
 # ─────────────────────────────────────────────
 #  Schema
@@ -30,6 +34,7 @@ CREATE TABLE IF NOT EXISTS users (
 CREATE TABLE IF NOT EXISTS saved_nicknames (
     id              INTEGER PRIMARY KEY AUTOINCREMENT,
     user_id         INTEGER NOT NULL REFERENCES users(telegram_id),
+    code            TEXT NOT NULL UNIQUE,
     original_text   TEXT NOT NULL,
     converted_text  TEXT NOT NULL,
     font_name       TEXT NOT NULL,
@@ -43,7 +48,6 @@ CREATE TABLE IF NOT EXISTS font_stats (
 );
 """
 
-
 # ─────────────────────────────────────────────
 #  Init
 # ─────────────────────────────────────────────
@@ -53,7 +57,6 @@ async def init_db():
         await db.executescript(CREATE_TABLES_SQL)
         await db.commit()
     logger.info(f"Database initialised at {DB_PATH}")
-
 
 # ─────────────────────────────────────────────
 #  Users
@@ -70,19 +73,16 @@ async def register_user(telegram_id: int, username: str | None, first_name: str 
         )
         await db.commit()
 
-
 async def get_total_users() -> int:
     async with aiosqlite.connect(DB_PATH) as db:
         async with db.execute("SELECT COUNT(*) FROM users") as cursor:
             row = await cursor.fetchone()
             return row[0] if row else 0
 
-
 # ─────────────────────────────────────────────
 #  Saved Nicknames
 # ─────────────────────────────────────────────
 MAX_SAVED_PER_USER = 20
-
 
 async def save_nickname(
     user_id: int,
@@ -119,14 +119,26 @@ async def save_nickname(
         if count >= MAX_SAVED_PER_USER:
             return False, "limit_reached"
 
+        # Generate a unique code
+        code = None
+        while True:
+            candidate = generate_code()
+            async with db.execute(
+                "SELECT id FROM saved_nicknames WHERE code = ?", (candidate,)
+            ) as cur:
+                if not await cur.fetchone():
+                    code = candidate
+                    break
+
         await db.execute(
             """
             INSERT INTO saved_nicknames
-                (user_id, original_text, converted_text, font_name, saved_at)
-            VALUES (?, ?, ?, ?, ?)
+                (user_id, code, original_text, converted_text, font_name, saved_at)
+            VALUES (?, ?, ?, ?, ?, ?)
             """,
             (
                 user_id,
+                code,
                 original_text,
                 converted_text,
                 font_name,
@@ -134,7 +146,7 @@ async def save_nickname(
             ),
         )
         await db.commit()
-        return True, "saved"
+        return True, code  # return the code so bot.py can show it
 
 
 async def get_saved_nicknames(user_id: int) -> list[dict]:
@@ -143,7 +155,7 @@ async def get_saved_nicknames(user_id: int) -> list[dict]:
         db.row_factory = aiosqlite.Row
         async with db.execute(
             """
-            SELECT id, original_text, converted_text, font_name, saved_at
+            SELECT id, code, original_text, converted_text, font_name, saved_at
             FROM saved_nicknames
             WHERE user_id = ?
             ORDER BY saved_at DESC
@@ -154,12 +166,12 @@ async def get_saved_nicknames(user_id: int) -> list[dict]:
             return [dict(r) for r in rows]
 
 
-async def delete_saved_nickname(user_id: int, nickname_id: int) -> bool:
-    """Delete a specific saved nickname. Returns True if a row was deleted."""
+async def delete_saved_nickname_by_code(user_id: int, code: str) -> bool:
+    """Delete a specific saved nickname by code. Returns True if deleted."""
     async with aiosqlite.connect(DB_PATH) as db:
         cursor = await db.execute(
-            "DELETE FROM saved_nicknames WHERE id = ? AND user_id = ?",
-            (nickname_id, user_id),
+            "DELETE FROM saved_nicknames WHERE code = ? AND user_id = ?",
+            (code, user_id),
         )
         await db.commit()
         return cursor.rowcount > 0
@@ -173,7 +185,6 @@ async def get_saved_count(user_id: int) -> int:
         ) as cursor:
             row = await cursor.fetchone()
             return row[0] if row else 0
-
 
 # ─────────────────────────────────────────────
 #  Font Stats
