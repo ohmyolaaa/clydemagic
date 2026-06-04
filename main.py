@@ -72,7 +72,7 @@ def cleanup_sessions():
 # ─────────────────────────────────────────────
 #  Bot setup
 # ─────────────────────────────────────────────
-BOT_TOKEN = "8975741273:AAERFWG11zY8_e9q47qZDjRQsD1oTzOPSas"
+BOT_TOKEN = "8885186472:AAGNjhlEWjosQTpNBYbqP9YLlxlBZM4cO6U"
 
 session = AiohttpSession(timeout=30)
 default_properties = DefaultBotProperties(parse_mode="HTML")
